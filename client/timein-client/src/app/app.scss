@@ -1,0 +1,19 @@
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Heebo', sans-serif !important;
+  margin: 0;
+  direction: rtl;
+  background: #f5f5f9;
+  color: #1e1b4b;
+}
+
+.mat-mdc-card, .mat-toolbar, .mat-mdc-table,
+button, input, textarea, select, mat-option,
+.mat-mdc-form-field, .mdc-text-field {
+  font-family: 'Heebo', sans-serif !important;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f0f0f8; }
+::-webkit-scrollbar-thumb { background: #c7c3f0; border-radius: 3px; }

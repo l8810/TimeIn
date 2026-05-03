@@ -1,0 +1,41 @@
+@use '@angular/material' as mat;
+
+@include mat.core();
+
+$timein-theme: mat.define-theme((
+  color: (
+    theme-type: light,
+    primary: mat.$blue-palette,
+  )
+));
+
+html {
+  @include mat.all-component-themes($timein-theme);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Heebo', sans-serif;
+  background: #f5f5f9;
+  color: #1e1b4b;
+  direction: rtl;
+}
+
+h1, h2, h3 { font-weight: 500; }
+
+mat-card { box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important; }
+
+.mat-mdc-table .mat-mdc-header-cell {
+  font-weight: 600;
+  color: #616161;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.snack-error .mdc-snackbar__surface {
+  background: #991b1b !important;
+  color: white !important;
+}

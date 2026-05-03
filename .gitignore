@@ -1,0 +1,22 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# .NET
+server/**/bin/
+server/**/obj/
+server/**/*.Development.json
+
+# Angular
+client/**/node_modules/
+client/**/dist/
+client/**/.angular/
+client/**/debug.log
+
+# Claude Code
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
