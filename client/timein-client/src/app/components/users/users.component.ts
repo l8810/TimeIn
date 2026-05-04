@@ -29,9 +29,15 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
           <h1>עובדים</h1>
           <p class="header-sub">ניהול חברי הצוות</p>
         </div>
-        <button class="btn-primary" (click)="openForm()">
-          <mat-icon>person_add</mat-icon> הוסף עובד
-        </button>
+        <div class="header-actions">
+          <button class="btn-toggle" [class.active]="showInactive" (click)="toggleInactive()">
+            <mat-icon>{{ showInactive ? 'visibility' : 'visibility_off' }}</mat-icon>
+            {{ showInactive ? 'הסתר לא פעילים' : 'הצג לא פעילים' }}
+          </button>
+          <button class="btn-primary" (click)="openForm()">
+            <mat-icon>person_add</mat-icon> הוסף עובד
+          </button>
+        </div>
       </div>
 
       <!-- Stats row -->
@@ -39,7 +45,7 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
         <div class="stat-card">
           <div class="stat-icon total"><mat-icon>group</mat-icon></div>
           <div>
-            <div class="stat-value">{{ dataSource.data.length }}</div>
+            <div class="stat-value">{{ total }}</div>
             <div class="stat-label">סה"כ</div>
           </div>
         </div>
@@ -126,11 +132,24 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
           <ng-container matColumnDef="actions">
             <th mat-header-cell *matHeaderCellDef></th>
             <td mat-cell *matCellDef="let u">
-              @if (canDelete(u)) {
-                <button class="deactivate-btn" matTooltip="מחיקת עובד" (click)="deactivate(u)">
-                  <mat-icon>person_off</mat-icon>
-                </button>
-              }
+              <div class="action-btns">
+                @if (canEdit(u)) {
+                  <button class="edit-btn" matTooltip="עריכה" (click)="openForm(u)">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                }
+                @if (canManage(u)) {
+                  @if (u.isActive) {
+                    <button class="deactivate-btn" matTooltip="השבתת עובד" (click)="deactivate(u)">
+                      <mat-icon>person_off</mat-icon>
+                    </button>
+                  } @else {
+                    <button class="activate-btn" matTooltip="הפעלת עובד" (click)="activate(u)">
+                      <mat-icon>person_add</mat-icon>
+                    </button>
+                  }
+                }
+              </div>
             </td>
           </ng-container>
 
@@ -155,6 +174,16 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
     .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
     h1 { margin: 0 0 2px; font-size: 28px; font-weight: 800; color: #1e1b4b; letter-spacing: -0.5px; }
     .header-sub { margin: 0; color: #9ca3af; font-size: 13px; }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+    .btn-toggle {
+      height: 44px; padding: 0 18px; border: 1.5px solid #e5e7eb; border-radius: 12px;
+      background: white; color: #6b7280; font-size: 13px; font-weight: 600;
+      font-family: 'Heebo', sans-serif; cursor: pointer;
+      display: flex; align-items: center; gap: 6px; transition: all 0.2s;
+    }
+    .btn-toggle mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    .btn-toggle:hover { border-color: #818cf8; color: #4f46e5; }
+    .btn-toggle.active { border-color: #4f46e5; background: #ede9fe; color: #4f46e5; }
     .btn-primary { height: 44px; padding: 0 22px; border: none; border-radius: 12px;
       background: linear-gradient(135deg, #4f46e5, #7c3aed);
       color: white; font-size: 14px; font-weight: 600; font-family: inherit;
@@ -225,7 +254,18 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
     .text-active   { color: #059669; }
     .text-inactive { color: #9ca3af; }
 
-    /* Deactivate button */
+    /* Action buttons */
+    .action-btns { display: flex; align-items: center; gap: 6px; }
+    .edit-btn { width: 32px; height: 32px; border: none; border-radius: 8px;
+      background: #eff6ff; color: #3b82f6; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+    .edit-btn:hover { background: #dbeafe; transform: scale(1.1); }
+    .edit-btn mat-icon { font-size: 17px; width: 17px; height: 17px; }
+    .activate-btn { width: 32px; height: 32px; border: none; border-radius: 8px;
+      background: #d1fae5; color: #059669; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+    .activate-btn:hover { background: #a7f3d0; transform: scale(1.1); }
+    .activate-btn mat-icon { font-size: 17px; width: 17px; height: 17px; }
     .deactivate-btn { width: 32px; height: 32px; border: none; border-radius: 8px;
       background: #fff1f2; color: #f43f5e; cursor: pointer;
       display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
@@ -244,6 +284,8 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 export class UsersComponent implements OnInit {
   dataSource = new MatTableDataSource<User>([]);
   displayedColumns = ['avatar', 'name', 'role', 'team', 'status', 'actions'];
+  showInactive = false;
+  private allUsers: User[] = [];
 
   constructor(
     private http: HttpClient,
@@ -255,13 +297,14 @@ export class UsersComponent implements OnInit {
 
   ngOnInit() { this.load(); }
 
-  openForm() {
+  openForm(user?: User) {
     const currentUser = this.auth.currentUser();
     const ref = this.dialog.open(UserFormComponent, {
       width: '460px',
       data: {
         isAdmin: this.auth.hasRole('Admin'),
-        managerTeamName: currentUser?.teamName
+        managerTeamName: currentUser?.teamName,
+        user
       }
     });
     ref.afterClosed().subscribe(saved => { if (saved) this.load(); });
@@ -269,21 +312,44 @@ export class UsersComponent implements OnInit {
 
   private load() {
     this.http.get<User[]>(`${environment.apiUrl}/users`).subscribe({
-      next: u => { this.dataSource.data = u; this.cdr.detectChanges(); },
+      next: u => {
+        this.allUsers = u;
+        this.applyFilter();
+        this.cdr.detectChanges();
+      },
       error: () => this.snackBar.open('שגיאה בטעינת העובדים', 'סגור', { duration: 3000 })
     });
   }
 
-  get active()    { return this.dataSource.data.filter(u => u.isActive).length; }
-  get managers()  { return this.dataSource.data.filter(u => u.role === 'Manager').length; }
-  get employees() { return this.dataSource.data.filter(u => u.role === 'Employee').length; }
+  toggleInactive() {
+    this.showInactive = !this.showInactive;
+    this.applyFilter();
+  }
+
+  private applyFilter() {
+    this.dataSource.data = this.showInactive
+      ? this.allUsers
+      : this.allUsers.filter(u => u.isActive);
+    this.cdr.detectChanges();
+  }
+
+  get total()     { return this.allUsers.length; }
+  get active()    { return this.allUsers.filter(u => u.isActive).length; }
+  get managers()  { return this.allUsers.filter(u => u.role === 'Manager' && u.isActive).length; }
+  get employees() { return this.allUsers.filter(u => u.role === 'Employee' && u.isActive).length; }
 
   roleIcon(role: string): string {
     const m: any = { Employee: 'person', Manager: 'manage_accounts', Admin: 'shield' };
     return m[role] ?? 'person';
   }
 
-  canDelete(user: User): boolean {
+  canEdit(user: User): boolean {
+    if (this.auth.hasRole('Admin')) return true;
+    if (this.auth.hasRole('Manager')) return user.role === 'Employee';
+    return false;
+  }
+
+  canManage(user: User): boolean {
     if (this.auth.hasRole('Admin')) return true;
     if (this.auth.hasRole('Manager')) return user.role === 'Employee';
     return false;
@@ -291,13 +357,20 @@ export class UsersComponent implements OnInit {
 
   deactivate(user: User) {
     this.dialog.open(ConfirmDialogComponent, {
-      data: { title: 'מחיקת עובד', message: `למחוק את ${user.fullName}?` }
+      data: { title: 'השבתת עובד', message: `להשבית את ${user.fullName}?` }
     }).afterClosed().subscribe(ok => {
       if (!ok) return;
       this.http.delete(`${environment.apiUrl}/users/${user.userId}`).subscribe({
-        next: () => { this.snackBar.open('העובד נמחק בהצלחה', 'סגור', { duration: 3000 }); this.load(); },
-        error: () => this.snackBar.open('שגיאה במחיקת העובד', 'סגור', { duration: 3000 })
+        next: () => { this.snackBar.open('העובד הושבת', 'סגור', { duration: 2000 }); this.load(); },
+        error: () => this.snackBar.open('שגיאה', 'סגור', { duration: 3000 })
       });
+    });
+  }
+
+  activate(user: User) {
+    this.http.put(`${environment.apiUrl}/users/${user.userId}`, { isActive: true }).subscribe({
+      next: () => { this.snackBar.open('העובד הופעל מחדש', 'סגור', { duration: 2000 }); this.load(); },
+      error: () => this.snackBar.open('שגיאה', 'סגור', { duration: 3000 })
     });
   }
 

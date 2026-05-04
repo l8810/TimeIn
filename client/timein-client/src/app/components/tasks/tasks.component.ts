@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -14,6 +14,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { TaskService } from '../../services/task.service';
 import { ProjectService } from '../../services/project.service';
 import { AuthService } from '../../services/auth.service';
+import { GitService, GitCommit } from '../../services/git.service';
 import { Task, Project } from '../../models/models';
 import { TaskFormComponent } from './task-form.component';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
@@ -29,7 +30,7 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
       <div class="page-header">
         <div>
           <h1>משימות</h1>
-          <p class="header-sub">{{ dataSource.data.length }} משימות{{ myTasksOnly ? ' (שלי)' : '' }}</p>
+          <p class="header-sub">{{ dataSource.data.length }} משימות{{ filterMode === 'mine' ? ' (שלי)' : filterMode === 'unassigned' ? ' (לא משויכות)' : ' (צוות)' }}</p>
         </div>
         @if (auth.hasRole('Manager', 'Admin')) {
           <button class="btn-primary" (click)="openForm()">
@@ -49,12 +50,17 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
           </mat-select>
         </mat-form-field>
         <div class="filter-chips">
-          <button class="chip" [class.active]="!myTasksOnly" (click)="myTasksOnly = false; applyFilter()">
+          <button class="chip" [class.active]="filterMode === 'team'" (click)="filterMode = 'team'; applyFilter()">
             <mat-icon>group</mat-icon> כל הצוות
           </button>
-          <button class="chip" [class.active]="myTasksOnly" (click)="myTasksOnly = true; applyFilter()">
+          <button class="chip" [class.active]="filterMode === 'mine'" (click)="filterMode = 'mine'; applyFilter()">
             <mat-icon>person</mat-icon> שלי
           </button>
+          @if (auth.hasRole('Manager', 'Admin')) {
+            <button class="chip" [class.active]="filterMode === 'unassigned'" (click)="filterMode = 'unassigned'; applyFilter()">
+              <mat-icon>assignment_late</mat-icon> לא משויכות
+            </button>
+          }
         </div>
       </div>
 
@@ -109,7 +115,27 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
                     <mat-icon>group</mat-icon>{{ t.assignedTeamName }}
                   </span>
                 }
-                @if (!t.assignedUserName && !t.assignedTeamName) { <span>—</span> }
+                @if (!t.assignedUserName && !t.assignedTeamName) {
+                  @if (filterMode === 'unassigned' && assigningTeamTaskId === t.taskId) {
+                    <div class="assign-panel">
+                      <mat-select [(ngModel)]="assigningTeamProjectValue" class="assign-select" placeholder="בחר פרויקט">
+                        @for (p of projects; track p.projectId) {
+                          <mat-option [value]="p.projectId">{{ p.projectName }}</mat-option>
+                        }
+                      </mat-select>
+                      <div class="assign-actions">
+                        <button class="btn-confirm" (click)="confirmAssignToTeam(t)" [disabled]="!assigningTeamProjectValue">אישור</button>
+                        <button class="btn-cancel" (click)="cancelAssignToTeam()">ביטול</button>
+                      </div>
+                    </div>
+                  } @else if (filterMode === 'unassigned') {
+                    <button class="btn-assign" (click)="startAssignToTeam(t)">
+                      <mat-icon>add</mat-icon> שייך לצוות
+                    </button>
+                  } @else {
+                    <span>—</span>
+                  }
+                }
               </div>
             </td>
           </ng-container>
@@ -146,6 +172,22 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
               }
             </td>
           </ng-container>
+          <ng-container matColumnDef="commits">
+            <th mat-header-cell *matHeaderCellDef>Commits</th>
+            <td mat-cell *matCellDef="let t">
+              @if (commitCounts[t.taskId]) {
+                <button class="commits-toggle"
+                  [class.active]="expandedTaskId === t.taskId"
+                  (click)="$event.stopPropagation(); toggleCommits(t)"
+                  matTooltip="הצג commits">
+                  <mat-icon>commit</mat-icon>
+                  <span class="commit-count-badge">{{ commitCounts[t.taskId] }}</span>
+                </button>
+              } @else {
+                <span class="muted">—</span>
+              }
+            </td>
+          </ng-container>
           <ng-container matColumnDef="actions">
             <th mat-header-cell *matHeaderCellDef></th>
             <td mat-cell *matCellDef="let t">
@@ -165,6 +207,34 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
           </div>
         }
       </div>
+
+      @if (expandedTaskId) {
+        <div class="commits-panel" #commitsPanel>
+          <div class="commits-panel-header">
+            <mat-icon>commit</mat-icon>
+            <span>Commits — {{ expandedTaskName }}</span>
+            <button class="close-btn" (click)="expandedTaskId = null">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+          <div class="commits-panel-body">
+            @if (commitsLoading) {
+              <span class="commits-loading"><span class="mini-spinner"></span> טוען...</span>
+            } @else if (!taskCommits.length) {
+              <span class="commits-empty"><mat-icon>code_off</mat-icon> אין commits משויכים למשימה זו</span>
+            } @else {
+              @for (c of taskCommits; track c.hash) {
+                <a [href]="c.url" target="_blank" class="commit-chip">
+                  <mat-icon>commit</mat-icon>
+                  <span class="chip-hash">{{ c.shortHash }}</span>
+                  <span class="chip-msg">{{ c.message }}</span>
+                  <span class="chip-date">{{ c.date | date:'dd/MM HH:mm' }}</span>
+                </a>
+              }
+            }
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: [`
@@ -280,29 +350,105 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
       font-family: 'Heebo', sans-serif; cursor: pointer; transition: all 0.15s;
     }
     .btn-cancel:hover { border-color: #9ca3af; color: #374151; }
+
+    .commits-toggle {
+      width: 30px; height: 30px; border: 1px solid #e5e7eb; border-radius: 8px;
+      background: white; cursor: pointer; display: flex; align-items: center;
+      justify-content: center; color: #9ca3af; transition: all 0.15s;
+    }
+    .commits-toggle mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .commits-toggle:hover, .commits-toggle.active { background: #ede9fe; border-color: #818cf8; color: #4f46e5; }
+    .commit-count-badge {
+      font-size: 11px; font-weight: 700; background: #4f46e5; color: white;
+      border-radius: 8px; padding: 0 5px; line-height: 16px;
+    }
+
+    .commits-panel {
+      margin-top: 16px; background: white; border-radius: 16px;
+      border: 1px solid #e5e7eb; box-shadow: 0 2px 8px rgba(30,27,75,0.05);
+      overflow: hidden;
+    }
+    .commits-panel-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 14px 20px; background: #fafafe; border-bottom: 1px solid #f3f4f6;
+      font-size: 14px; font-weight: 700; color: #1e1b4b;
+    }
+    .commits-panel-header mat-icon { color: #4f46e5; font-size: 18px; width: 18px; height: 18px; }
+    .commits-panel-header span { flex: 1; }
+    .close-btn {
+      width: 28px; height: 28px; border: none; border-radius: 6px;
+      background: transparent; cursor: pointer; display: flex;
+      align-items: center; justify-content: center; color: #9ca3af;
+      transition: all 0.15s;
+    }
+    .close-btn mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .close-btn:hover { background: #fee2e2; color: #ef4444; }
+    .commits-panel-body {
+      display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 20px;
+    }
+    .commits-loading, .commits-empty {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: #9ca3af;
+    }
+    .commits-empty mat-icon { font-size: 15px; width: 15px; height: 15px; opacity: 0.5; }
+    .mini-spinner {
+      width: 14px; height: 14px; border: 2px solid #e5e7eb;
+      border-top-color: #4f46e5; border-radius: 50%;
+      display: inline-block; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .commit-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: white; border: 1px solid #e5e7eb; border-radius: 8px;
+      padding: 6px 12px; text-decoration: none; transition: all 0.15s;
+      max-width: 420px;
+    }
+    .commit-chip:hover { border-color: #818cf8; background: #f5f3ff; }
+    .commit-chip mat-icon { font-size: 14px; width: 14px; height: 14px; color: #4f46e5; flex-shrink: 0; }
+    .chip-hash {
+      font-family: monospace; font-size: 11px; font-weight: 700;
+      color: #1e1b4b; background: #ede9fe; padding: 1px 5px;
+      border-radius: 4px; flex-shrink: 0;
+    }
+    .chip-msg {
+      font-size: 12px; color: #374151; font-weight: 500;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .chip-date { font-size: 11px; color: #9ca3af; flex-shrink: 0; }
   `]
 })
 export class TasksComponent implements OnInit {
+  @ViewChild('commitsPanel') commitsPanelRef?: ElementRef;
   dataSource = new MatTableDataSource<Task>([]);
   projects: Project[] = [];
   selectedProjectId: number | null = null;
-  myTasksOnly = false;
+  filterMode: 'team' | 'mine' | 'unassigned' = 'team';
   private allTasks: Task[] = [];
-  displayedColumns = ['name', 'project', 'assignee', 'priority', 'status', 'hours', 'clickup', 'actions'];
+  displayedColumns = ['name', 'project', 'assignee', 'priority', 'status', 'hours', 'clickup', 'commits', 'actions'];
   assigningProjectTaskId: number | null = null;
+  assigningTeamTaskId: number | null = null;
   assigningProjectValue: number | null = null;
+  assigningTeamProjectValue: number | null = null;
+  expandedTaskId: number | null = null;
+  expandedTaskName = '';
+  taskCommits: GitCommit[] = [];
+  commitsLoading = false;
+  commitCounts: Record<number, number> = {};
 
   constructor(
     private taskService: TaskService,
     private projectService: ProjectService,
     public auth: AuthService,
+    private gitService: GitService,
     private dialog: MatDialog,
-    private snackBar: MatSnackBar
+    private snackBar: MatSnackBar,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit() {
     this.projectService.getAll().subscribe(p => this.projects = p);
     this.load();
+    this.gitService.getTaskCommitCounts().subscribe(c => this.commitCounts = c);
   }
 
   load() {
@@ -314,9 +460,13 @@ export class TasksComponent implements OnInit {
 
   applyFilter() {
     const userId = this.auth.currentUser()?.userId;
-    this.dataSource.data = this.myTasksOnly && userId
-      ? this.allTasks.filter(t => t.assignedUserId === userId)
-      : this.allTasks;
+    if (this.filterMode === 'mine') {
+      this.dataSource.data = this.allTasks.filter(t => t.assignedUserId === userId);
+    } else if (this.filterMode === 'team') {
+      this.dataSource.data = this.allTasks.filter(t => t.assignedTeamId != null);
+    } else if (this.filterMode === 'unassigned') {
+      this.dataSource.data = this.allTasks.filter(t => t.assignedTeamId == null);
+    }
   }
 
   openForm(task?: Task) {
@@ -355,6 +505,56 @@ export class TasksComponent implements OnInit {
         this.snackBar.open('המשימה שויכה לפרויקט', 'סגור', { duration: 2000 });
       },
       error: () => this.snackBar.open('שגיאה בשיוך הפרויקט', 'סגור', { duration: 3000 })
+    });
+  }
+
+  startAssignToTeam(task: Task) {
+    this.assigningTeamTaskId = task.taskId;
+    this.assigningTeamProjectValue = null;
+  }
+
+  cancelAssignToTeam() {
+    this.assigningTeamTaskId = null;
+    this.assigningTeamProjectValue = null;
+  }
+
+  confirmAssignToTeam(task: Task) {
+    if (!this.assigningTeamProjectValue) return;
+    const teamId = this.auth.currentUser()?.teamId;
+    if (!teamId) return;
+    this.taskService.update(task.taskId, { assignedTeamId: teamId, projectId: this.assigningTeamProjectValue }).subscribe({
+      next: () => {
+        this.cancelAssignToTeam();
+        this.load();
+        this.snackBar.open('המשימה שויכה לצוות', 'סגור', { duration: 2000 });
+      },
+      error: () => this.snackBar.open('שגיאה בשיוך לצוות', 'סגור', { duration: 3000 })
+    });
+  }
+
+  toggleCommits(task: Task) {
+    if (this.expandedTaskId === task.taskId) {
+      this.expandedTaskId = null;
+      this.cdr.detectChanges();
+      return;
+    }
+    this.expandedTaskId = task.taskId;
+    this.expandedTaskName = task.taskName;
+    this.taskCommits = [];
+    this.commitsLoading = true;
+    this.cdr.detectChanges();
+    this.gitService.getCommitsByTask(task.taskId).subscribe({
+      next: c => {
+        Promise.resolve().then(() => {
+          this.taskCommits = c;
+          this.commitsLoading = false;
+          this.cdr.detectChanges();
+          setTimeout(() => this.commitsPanelRef?.nativeElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+        });
+      },
+      error: () => {
+        Promise.resolve().then(() => { this.commitsLoading = false; this.cdr.detectChanges(); });
+      }
     });
   }
 

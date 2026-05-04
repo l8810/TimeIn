@@ -14,6 +14,7 @@ import { TaskService } from '../../services/task.service';
 import { ProjectService } from '../../services/project.service';
 import { ReportingRulesService } from '../../services/reporting-rules.service';
 import { TimeEntry, Project, Task, ReportingRules, ClickUpTaskSummary } from '../../models/models';
+import { GitService, GitCommit } from '../../services/git.service';
 
 @Component({
   selector: 'app-time-entry-form',
@@ -109,8 +110,7 @@ import { TimeEntry, Project, Task, ReportingRules, ClickUpTaskSummary } from '..
           } @else {
             <mat-form-field appearance="outline" class="full-width">
               <mat-label>שם המשימה</mat-label>
-              <input matInput [(ngModel)]="model.manualTaskName" name="manualTaskName"
-                placeholder="לדוגמה: עיצוב מסך לוגין" />
+              <input matInput [(ngModel)]="model.manualTaskName" name="manualTaskName"/>
               <mat-icon matSuffix>edit</mat-icon>
             </mat-form-field>
           }
@@ -210,9 +210,49 @@ import { TimeEntry, Project, Task, ReportingRules, ClickUpTaskSummary } from '..
             <mat-form-field appearance="outline" class="full-width" style="margin-top:8px">
               <mat-label>ClickUp Task ID (אופציונלי)</mat-label>
               <input matInput [(ngModel)]="model.relatedClickUpTaskId" name="relatedClickUpTaskId"
-                placeholder="לדוגמה: 86exee1pv" />
+                />
               <mat-icon matSuffix style="color:#7b68ee">link</mat-icon>
             </mat-form-field>
+          }
+        </div>
+
+        <div class="git-section">
+          <button type="button" class="btn-link" (click)="toggleGitField()">
+            <mat-icon>commit</mat-icon>
+            {{ showGitField ? 'הסתר קישור Commit' : 'קשר ל-Commit Git' }}
+            @if (loadingGits) { <span class="cu-loading">טוען...</span> }
+          </button>
+          @if (showGitField) {
+            @if (gitCommits.length > 0) {
+              <mat-form-field appearance="outline" class="full-width" style="margin-top:8px">
+                <mat-label>בחר Commit (אופציונלי)</mat-label>
+                <mat-select [(ngModel)]="model.relatedCommitIds" name="relatedCommitIds">
+                  <mat-option [value]="null">ללא קישור</mat-option>
+                  @for (c of gitCommits; track c.hash) {
+                    <mat-option [value]="c.hash">
+                      {{ c.shortHash }} — {{ c.message | slice:0:50 }}
+                    </mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            } @else if (!loadingGits) {
+              <div class="no-commits-msg">
+                <mat-icon>info_outline</mat-icon>
+                <span>לא נמצאו commits ב-7 ימים לפני תאריך הדיווח</span>
+              </div>
+            }
+            @if (model.relatedCommitIds) {
+              <div class="commit-linked-row">
+                <mat-icon>commit</mat-icon>
+                <code class="commit-hash-chip">{{ model.relatedCommitIds | slice:0:7 }}</code>
+                @if (linkedCommit) {
+                  <span class="commit-msg-preview">{{ linkedCommit.message | slice:0:55 }}</span>
+                }
+                <button type="button" class="btn-clear-link" (click)="model.relatedCommitIds = null">
+                  <mat-icon>close</mat-icon>
+                </button>
+              </div>
+            }
           }
         </div>
 
@@ -360,6 +400,7 @@ import { TimeEntry, Project, Task, ReportingRules, ClickUpTaskSummary } from '..
       padding: 8px 12px; font-size: 12px; margin-bottom: 12px;
     }
     .clickup-manual-section { margin-bottom: 4px; }
+    .git-section { margin-bottom: 4px; }
     .btn-link {
       background: none; border: none; cursor: pointer; padding: 4px 0;
       font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 4px;
@@ -367,13 +408,37 @@ import { TimeEntry, Project, Task, ReportingRules, ClickUpTaskSummary } from '..
     }
     .btn-link:hover { color: #7b68ee; }
     .btn-link mat-icon { font-size: 15px; width: 15px; height: 15px; }
+    .no-commits-msg {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: #9ca3af; padding: 8px 4px;
+    }
+    .no-commits-msg mat-icon { font-size: 15px; width: 15px; height: 15px; }
+    .commit-linked-row {
+      display: flex; align-items: center; gap: 8px;
+      background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+      padding: 8px 12px; font-size: 12px; color: #15803d; margin-bottom: 8px;
+    }
+    .commit-linked-row mat-icon { font-size: 16px; width: 16px; height: 16px; color: #16a34a; }
+    .commit-hash-chip {
+      background: #dcfce7; color: #166534; padding: 2px 7px;
+      border-radius: 5px; font-size: 11px; font-family: monospace;
+    }
+    .commit-msg-preview { flex: 1; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .btn-clear-link {
+      background: none; border: none; cursor: pointer; padding: 0; margin-right: auto;
+      color: #9ca3af; display: flex; align-items: center;
+    }
+    .btn-clear-link:hover { color: #ef4444; }
+    .btn-clear-link mat-icon { font-size: 15px; width: 15px; height: 15px; }
   `]
 })
 export class TimeEntryFormComponent implements OnInit {
   entry?: TimeEntry;
   tasks: Task[] = [];
   clickUpTasks: ClickUpTaskSummary[] = [];
+  gitCommits: GitCommit[] = [];
   loadingClickUp = false;
+  loadingGits = false;
   rules: ReportingRules | null = null;
   warning = '';
   overlapError = '';
@@ -381,6 +446,7 @@ export class TimeEntryFormComponent implements OnInit {
   fromTimer = false;
   taskMode: 'select' | 'manual' = 'select';
   showClickUpField = false;
+  showGitField = false;
   selectedTaskClickUpId: string | null = null;
   model: any = { status: 'Draft', date: new Date().toISOString().slice(0, 10) };
 
@@ -395,6 +461,7 @@ export class TimeEntryFormComponent implements OnInit {
     private taskService: TaskService,
     private projectService: ProjectService,
     private rulesService: ReportingRulesService,
+    private gitService: GitService,
     private snackBar: MatSnackBar
   ) {}
 
@@ -420,10 +487,12 @@ export class TimeEntryFormComponent implements OnInit {
         durationMinutes: this.entry.durationMinutes,
         description: this.entry.description,
         status: this.entry.status,
-        relatedClickUpTaskId: this.entry.relatedClickUpTaskId
+        relatedClickUpTaskId: this.entry.relatedClickUpTaskId,
+        relatedCommitIds: this.entry.relatedCommitIds
       };
       if (this.entry.manualTaskName && !this.entry.taskId) this.taskMode = 'manual';
       if (this.entry.relatedClickUpTaskId) this.showClickUpField = true;
+      if (this.entry.relatedCommitIds) { this.showGitField = true; this.loadGitCommits(); }
       this.onProjectChange();
     }
   }
@@ -537,6 +606,33 @@ export class TimeEntryFormComponent implements OnInit {
         error: () => { this.loadingClickUp = false; }
       });
     }
+  }
+
+  toggleGitField() {
+    this.showGitField = !this.showGitField;
+    if (this.showGitField && this.gitCommits.length === 0 && !this.loadingGits) {
+      this.loadGitCommits();
+    }
+  }
+
+  loadGitCommits() {
+    const dateStr = this.model.date;
+    if (!dateStr) return;
+    const date = new Date(dateStr);
+    const from = new Date(date);
+    from.setDate(from.getDate() - 7);
+    const to = new Date(date);
+    to.setDate(to.getDate() + 1);
+    this.loadingGits = true;
+    this.gitService.getCommits(from, to).subscribe({
+      next: c => { this.gitCommits = c; this.loadingGits = false; },
+      error: () => { this.gitCommits = []; this.loadingGits = false; }
+    });
+  }
+
+  get linkedCommit(): GitCommit | null {
+    if (!this.model.relatedCommitIds) return null;
+    return this.gitCommits.find(c => c.hash === this.model.relatedCommitIds) ?? null;
   }
 
   save(status: string = 'Draft') {

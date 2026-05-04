@@ -6,6 +6,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { GitService, GitCommit } from '../../services/git.service';
+import { TaskService } from '../../services/task.service';
+import { Task } from '../../models/models';
 
 @Component({
   selector: 'app-commits-panel',
@@ -69,8 +71,23 @@ import { GitService, GitCommit } from '../../services/git.service';
                     <button class="btn-unlink" (click)="unlink(c)" matTooltip="הסר קישור">
                       <mat-icon>link_off</mat-icon>
                     </button>
+                  } @else if (linkingHash === c.hash) {
+                    <div class="task-picker">
+                      <select class="task-select" [(ngModel)]="selectedTaskId">
+                        <option [ngValue]="null" disabled>בחר משימה...</option>
+                        @for (t of tasks; track t.taskId) {
+                          <option [ngValue]="t.taskId">{{ t.taskName }}</option>
+                        }
+                      </select>
+                      <button class="btn-confirm" (click)="confirmLink(c)" [disabled]="!selectedTaskId">
+                        <mat-icon>check</mat-icon>
+                      </button>
+                      <button class="btn-cancel" (click)="cancelLink()">
+                        <mat-icon>close</mat-icon>
+                      </button>
+                    </div>
                   } @else {
-                    <button class="btn-link" (click)="link(c)">
+                    <button class="btn-link" (click)="startLink(c)">
                       <mat-icon>add_link</mat-icon> שייך
                     </button>
                   }
@@ -189,6 +206,27 @@ import { GitService, GitCommit } from '../../services/git.service';
     .btn-unlink mat-icon { font-size: 16px; width: 16px; height: 16px; }
     .btn-unlink:hover { background: #fee2e2; color: #ef4444; }
 
+    .task-picker {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .task-select {
+      height: 30px; padding: 0 8px; border: 1.5px solid #818cf8; border-radius: 8px;
+      font-size: 12px; font-family: 'Heebo', sans-serif; color: #374151;
+      background: white; cursor: pointer; max-width: 200px;
+    }
+    .task-select:focus { outline: none; border-color: #4f46e5; }
+    .btn-confirm, .btn-cancel {
+      width: 28px; height: 28px; border: none; border-radius: 6px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+    }
+    .btn-confirm { background: #d1fae5; color: #065f46; }
+    .btn-confirm:hover:not(:disabled) { background: #a7f3d0; }
+    .btn-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-confirm mat-icon, .btn-cancel mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .btn-cancel { background: #fee2e2; color: #ef4444; }
+    .btn-cancel:hover { background: #fecaca; }
+
     @keyframes spin { to { transform: rotate(360deg); } }
   `]
 })
@@ -196,13 +234,17 @@ export class CommitsPanelComponent implements OnInit {
   @Input() userId?: number;
 
   commits: GitCommit[] = [];
+  tasks: Task[] = [];
   loading = false;
   expanded = true;
   fromDate: string;
   toDate: string;
+  linkingHash: string | null = null;
+  selectedTaskId: number | null = null;
 
   constructor(
     private gitService: GitService,
+    private taskService: TaskService,
     private snackBar: MatSnackBar,
     private cdr: ChangeDetectorRef
   ) {
@@ -213,7 +255,10 @@ export class CommitsPanelComponent implements OnInit {
     this.fromDate = monthAgo.toISOString().split('T')[0];
   }
 
-  ngOnInit() { this.load(); }
+  ngOnInit() {
+    this.load();
+    this.taskService.getAll().subscribe(t => { this.tasks = t; });
+  }
 
   load() {
     this.loading = true;
@@ -238,19 +283,39 @@ export class CommitsPanelComponent implements OnInit {
     });
   }
 
-  link(commit: GitCommit) {
+  startLink(commit: GitCommit) {
+    this.linkingHash = commit.hash;
+    this.selectedTaskId = null;
+    this.cdr.detectChanges();
+  }
+
+  cancelLink() {
+    this.linkingHash = null;
+    this.selectedTaskId = null;
+    this.cdr.detectChanges();
+  }
+
+  confirmLink(commit: GitCommit) {
+    if (!this.selectedTaskId) return;
+    const task = this.tasks.find(t => t.taskId === this.selectedTaskId);
     this.gitService.linkCommit({
       commitHash: commit.hash,
       commitMessage: commit.message,
       authorName: commit.authorName,
       authorEmail: commit.authorEmail,
       commitDate: commit.date,
-      taskId: commit.matchedTaskId ? undefined : undefined
+      taskId: this.selectedTaskId
     }).subscribe({
       next: updated => {
         const idx = this.commits.findIndex(c => c.hash === commit.hash);
-        if (idx >= 0) this.commits[idx] = { ...this.commits[idx], ...updated };
-        this.snackBar.open('Commit שויך בהצלחה', 'סגור', { duration: 2000 });
+        if (idx >= 0) this.commits[idx] = {
+          ...this.commits[idx], ...updated,
+          linkedTaskId: this.selectedTaskId!,
+          linkedTaskName: task?.taskName
+        };
+        this.linkingHash = null;
+        this.selectedTaskId = null;
+        this.snackBar.open('Commit שויך למשימה', 'סגור', { duration: 2000 });
         this.cdr.detectChanges();
       },
       error: () => this.snackBar.open('שגיאה בשיוך', 'סגור', { duration: 3000 })

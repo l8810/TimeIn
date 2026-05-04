@@ -50,7 +50,7 @@ public class GitHubService
     public string? RepoFullName => _isConfigured ? $"{_repoOwner}/{_repoName}" : null;
 
     public async Task<List<GitCommitDto>> GetCommitsAsync(
-        string? authorEmail, DateTime? from, DateTime? to, int maxPages = 3)
+        IEnumerable<string>? authorEmails, DateTime? from, DateTime? to, int maxPages = 3)
     {
         if (!_isConfigured) return new();
         try
@@ -72,11 +72,24 @@ public class GitHubService
                 if (batch.Count < 100) break;
             }
 
-            // Filter by email if provided
-            if (!string.IsNullOrWhiteSpace(authorEmail))
-                allCommits = allCommits
-                    .Where(c => string.Equals(c.Commit?.Author?.Email, authorEmail, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+            if (authorEmails != null)
+            {
+                var emails = authorEmails
+                    .Where(e => !string.IsNullOrWhiteSpace(e))
+                    .Select(e => e!.Trim())
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                if (emails.Count > 0)
+                {
+                    allCommits = allCommits
+                        .Where(c => c.Commit?.Author?.Email != null && emails.Contains(c.Commit.Author.Email))
+                        .ToList();
+                }
+                else
+                {
+                    allCommits.Clear();
+                }
+            }
 
             // Load stored links
             var hashes = allCommits.Select(c => c.Sha).ToList();

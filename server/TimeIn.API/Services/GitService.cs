@@ -26,13 +26,30 @@ public class GitService
         catch { return null; }
     }
 
-    public async Task<GitInfoDto> GetRepoInfoAsync()
+    private string? FindGitDir()
     {
-        // Walk up from the server directory to find the repo root
         var dir = AppContext.BaseDirectory;
         while (dir != null && !Directory.Exists(Path.Combine(dir, ".git")))
             dir = Directory.GetParent(dir)?.FullName;
+        return dir;
+    }
 
+    public async Task<bool> UpdateRemoteUrlAsync(string newUrl)
+    {
+        var dir = FindGitDir();
+        if (dir == null) return false;
+
+        // Try set-url first (remote already exists), fall back to add
+        var result = await RunGit($"remote set-url origin \"{newUrl}\"", dir);
+        if (result != null) return true;
+
+        var addResult = await RunGit($"remote add origin \"{newUrl}\"", dir);
+        return addResult != null;
+    }
+
+    public async Task<GitInfoDto> GetRepoInfoAsync()
+    {
+        var dir = FindGitDir();
         if (dir == null)
             return new GitInfoDto { IsRepo = false };
 

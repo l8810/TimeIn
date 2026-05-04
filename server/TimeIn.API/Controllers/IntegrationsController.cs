@@ -1,8 +1,11 @@
+using System.Net.Http.Headers;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TimeIn.API.Data;
 using TimeIn.API.DTOs;
+using TimeIn.API.Models;
 using TimeIn.API.Services;
 
 namespace TimeIn.API.Controllers;
@@ -15,12 +18,92 @@ public class IntegrationsController : ControllerBase
     private readonly ClickUpService _clickUp;
     private readonly AppDbContext _db;
     private readonly GitService _git;
+    private readonly IConfiguration _config;
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public IntegrationsController(ClickUpService clickUp, AppDbContext db, GitService git)
+    private static readonly JsonSerializerOptions _json = new() { PropertyNameCaseInsensitive = true };
+
+    public IntegrationsController(ClickUpService clickUp, AppDbContext db, GitService git,
+        IConfiguration config, IHttpClientFactory httpClientFactory)
     {
         _clickUp = clickUp;
         _db = db;
         _git = git;
+        _config = config;
+        _httpClientFactory = httpClientFactory;
+    }
+
+    [HttpGet("connection-settings")]
+    public async Task<IActionResult> GetConnectionSettings()
+    {
+        var dbApiKey = await _db.SystemSettings
+            .Where(s => s.Key == "ClickUp:ApiKey").Select(s => s.Value).FirstOrDefaultAsync();
+        var apiKey = !string.IsNullOrWhiteSpace(dbApiKey) ? dbApiKey : _config["ClickUp:ApiKey"];
+
+        var gitInfo = await _git.GetRepoInfoAsync();
+
+        return Ok(new ConnectionSettingsDto
+        {
+            ClickUpApiKeyMasked = MaskKey(apiKey),
+            ClickUpApiKeyConfigured = !string.IsNullOrWhiteSpace(apiKey),
+            GitRemoteUrl = gitInfo.RemoteUrl ?? string.Empty
+        });
+    }
+
+    [HttpPut("connection-settings")]
+    public async Task<IActionResult> UpdateConnectionSettings([FromBody] UpdateConnectionSettingsRequest req)
+    {
+        if (req.ClickUpApiKey != null)
+        {
+            var s = await _db.SystemSettings.FindAsync("ClickUp:ApiKey");
+            if (s == null)
+                _db.SystemSettings.Add(new SystemSetting { Key = "ClickUp:ApiKey", Value = req.ClickUpApiKey.Trim() });
+            else
+                s.Value = req.ClickUpApiKey.Trim();
+        }
+
+        if (req.GitRemoteUrl != null)
+            await _git.UpdateRemoteUrlAsync(req.GitRemoteUrl.Trim());
+
+        await _db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpPost("test-clickup-key")]
+    public async Task<IActionResult> TestClickUpKey([FromBody] TestClickUpKeyRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.ApiKey))
+            return Ok(new TestClickUpKeyResponse { IsConnected = false });
+
+        var http = _httpClientFactory.CreateClient();
+        http.BaseAddress = new Uri("https://api.clickup.com/api/v2/");
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(req.ApiKey.Trim());
+
+        try
+        {
+            var response = await http.GetAsync("team");
+            if (!response.IsSuccessStatusCode)
+                return Ok(new TestClickUpKeyResponse { IsConnected = false });
+
+            var json = await response.Content.ReadAsStringAsync();
+            var data = JsonSerializer.Deserialize<ClickUpWorkspaceResponse>(json, _json);
+            return Ok(new TestClickUpKeyResponse
+            {
+                IsConnected = true,
+                WorkspaceName = data?.Teams.FirstOrDefault()?.Name
+            });
+        }
+        catch
+        {
+            return Ok(new TestClickUpKeyResponse { IsConnected = false });
+        }
+    }
+
+    private static string MaskKey(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return string.Empty;
+        if (key.Length <= 8) return new string('*', key.Length);
+        return key[..4] + new string('*', key.Length - 8) + key[^4..];
     }
 
     [HttpGet("git")]

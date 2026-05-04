@@ -171,7 +171,7 @@ public class ReportService
         var projectIds = projects.Select(p => p.ProjectId).ToList();
         var tasks = await _db.Tasks.Where(t => t.ProjectId.HasValue && projectIds.Contains(t.ProjectId.Value)).ToListAsync();
         var projectEntries = await _db.TimeEntries
-            .Where(te => projectIds.Contains(te.ProjectId))
+            .Where(te => projectIds.Contains(te.ProjectId) && te.Status == Models.TimeEntryStatus.Approved)
             .ToListAsync();
 
         var projectStats = projects.Select(p =>
@@ -555,7 +555,7 @@ public class ReportService
         {
             Entries = dtos,
             TotalCount = dtos.Count,
-            TotalHours = Math.Round(entries.Sum(e => e.DurationMinutes) / 60.0, 2)
+            TotalHours = Math.Round(entries.Where(e => e.Status == Models.TimeEntryStatus.Approved).Sum(e => e.DurationMinutes) / 60.0, 2)
         };
     }
 }

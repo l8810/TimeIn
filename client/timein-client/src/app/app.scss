@@ -4,8 +4,8 @@ body {
   font-family: 'Heebo', sans-serif !important;
   margin: 0;
   direction: rtl;
-  background: #f5f5f9;
-  color: #1e1b4b;
+  background: #f0f4f8;
+  color: #1e293b;
 }
 
 .mat-mdc-card, .mat-toolbar, .mat-mdc-table,
@@ -15,5 +15,5 @@ button, input, textarea, select, mat-option,
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #f0f0f8; }
-::-webkit-scrollbar-thumb { background: #c7c3f0; border-radius: 3px; }
+::-webkit-scrollbar-track { background: #e2e8f0; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }

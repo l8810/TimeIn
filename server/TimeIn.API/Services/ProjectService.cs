@@ -17,7 +17,6 @@ public class ProjectService
             .Include(p => p.Manager)
             .Include(p => p.Team)
             .Include(p => p.Tasks)
-            .Include(p => p.TimeEntries)
             .Include(p => p.Members)
             .AsQueryable();
 
@@ -31,6 +30,11 @@ public class ProjectService
                 ? query.Where(p => p.TeamId == teamId)
                 : query.Where(p => p.Members.Any(m => m.UserId == userId));
         }
+
+        var approvedMinutesByProject = await _db.TimeEntries
+            .Where(te => te.Status == TimeEntryStatus.Approved)
+            .GroupBy(te => te.ProjectId)
+            .ToDictionaryAsync(g => g.Key, g => g.Sum(te => te.DurationMinutes));
 
         return await query.Select(p => new ProjectDto
         {
@@ -46,7 +50,7 @@ public class ProjectService
             GitRepositoryUrl = p.GitRepositoryUrl,
             CreatedAt = p.CreatedAt,
             TotalTasks = p.Tasks.Count,
-            TotalHours = Math.Round(p.TimeEntries.Sum(te => te.DurationMinutes) / 60.0, 2),
+            TotalHours = Math.Round(approvedMinutesByProject.GetValueOrDefault(p.ProjectId) / 60.0, 2),
             MemberCount = p.Members.Count,
             IsCurrentUserMember = p.Members.Any(m => m.UserId == userId)
         }).ToListAsync();
@@ -58,11 +62,14 @@ public class ProjectService
             .Include(p => p.Manager)
             .Include(p => p.Team)
             .Include(p => p.Tasks)
-            .Include(p => p.TimeEntries)
             .Include(p => p.Members)
             .FirstOrDefaultAsync(p => p.ProjectId == id);
 
         if (p == null) return null;
+
+        var approvedMinutes = await _db.TimeEntries
+            .Where(te => te.ProjectId == id && te.Status == TimeEntryStatus.Approved)
+            .SumAsync(te => (int?)te.DurationMinutes) ?? 0;
 
         return new ProjectDto
         {
@@ -78,14 +85,14 @@ public class ProjectService
             GitRepositoryUrl = p.GitRepositoryUrl,
             CreatedAt = p.CreatedAt,
             TotalTasks = p.Tasks.Count,
-            TotalHours = Math.Round(p.TimeEntries.Sum(te => te.DurationMinutes) / 60.0, 2),
+            TotalHours = Math.Round(approvedMinutes / 60.0, 2),
             MemberCount = p.Members.Count
         };
     }
 
     public async Task<ProjectDto> CreateAsync(CreateProjectRequest req, int callerUserId, string callerRole)
     {
-        int managerId = req.ManagerId ?? callerUserId;
+        int managerId = callerUserId;
         int? teamId = req.TeamId;
 
         if (callerRole == "Manager")
@@ -95,6 +102,54 @@ public class ProjectService
                 .Where(u => u.UserId == callerUserId)
                 .Select(u => u.TeamId)
                 .FirstOrDefaultAsync();
+        }
+        else if (callerRole == "Admin")
+        {
+            if (teamId.HasValue)
+            {
+                if (req.ManagerId.HasValue)
+                {
+                    var selectedManager = await _db.Users
+                        .Where(u => u.UserId == req.ManagerId.Value && u.Role == UserRole.Manager)
+                        .FirstOrDefaultAsync();
+
+                    if (selectedManager?.TeamId == teamId)
+                    {
+                        managerId = req.ManagerId.Value;
+                    }
+                    else
+                    {
+                        var teamManagerId = await _db.Users
+                            .Where(u => u.TeamId == teamId && u.Role == UserRole.Manager)
+                            .OrderBy(u => u.FullName)
+                            .Select(u => (int?)u.UserId)
+                            .FirstOrDefaultAsync();
+
+                        if (teamManagerId.HasValue)
+                        {
+                            managerId = teamManagerId.Value;
+                        }
+                    }
+                }
+                else
+                {
+                    var teamManagerId = await _db.Users
+                        .Where(u => u.TeamId == teamId && u.Role == UserRole.Manager)
+                        .OrderBy(u => u.FullName)
+                        .Select(u => (int?)u.UserId)
+                        .FirstOrDefaultAsync();
+
+                    if (teamManagerId.HasValue)
+                    {
+                        managerId = teamManagerId.Value;
+                    }
+                }
+            }
+        }
+
+        if (callerRole != "Admin" && req.ManagerId.HasValue)
+        {
+            managerId = callerUserId;
         }
 
         var project = new Project
@@ -179,8 +234,12 @@ public class ProjectService
         var query = _db.Tasks
             .Include(t => t.Project)
             .Include(t => t.AssignedUser)
-            .Include(t => t.TimeEntries)
             .Where(t => t.ProjectId == projectId);
+
+        var approvedMinutesByTask = await _db.TimeEntries
+            .Where(te => te.ProjectId == projectId && te.Status == TimeEntryStatus.Approved && te.TaskId.HasValue)
+            .GroupBy(te => te.TaskId!.Value)
+            .ToDictionaryAsync(g => g.Key, g => g.Sum(te => te.DurationMinutes));
 
         return await query.Select(t => new TaskDto
         {
@@ -195,7 +254,7 @@ public class ProjectService
             Priority = t.Priority.ToString(),
             ClickUpTaskId = t.ClickUpTaskId,
             EstimatedHours = t.EstimatedHours,
-            LoggedHours = Math.Round(t.TimeEntries.Sum(te => te.DurationMinutes) / 60.0, 2),
+            LoggedHours = Math.Round(approvedMinutesByTask.GetValueOrDefault(t.TaskId) / 60.0, 2),
             CreatedAt = t.CreatedAt
         }).ToListAsync();
     }

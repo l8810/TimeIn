@@ -59,6 +59,14 @@ export class GitService {
     return this.http.get<GitGap[]>(`${this.base}/gaps`, { params });
   }
 
+  getTaskCommitCounts(): Observable<Record<number, number>> {
+    return this.http.get<Record<number, number>>(`${this.base}/commits/task-counts`);
+  }
+
+  getCommitsByTask(taskId: number): Observable<GitCommit[]> {
+    return this.http.get<GitCommit[]>(`${this.base}/commits/task/${taskId}`);
+  }
+
   getStatus(): Observable<{ configured: boolean; repo: string }> {
     return this.http.get<any>(`${this.base}/status`);
   }

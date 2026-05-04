@@ -31,7 +31,13 @@ public class ClickUpService
         _db = db;
         _logger = logger;
 
-        var apiKey = config["ClickUp:ApiKey"];
+        // DB overrides appsettings so the key can be changed from the UI
+        var dbApiKey = _db.SystemSettings.AsNoTracking()
+            .Where(s => s.Key == "ClickUp:ApiKey")
+            .Select(s => s.Value)
+            .FirstOrDefault();
+        var apiKey = !string.IsNullOrWhiteSpace(dbApiKey) ? dbApiKey : config["ClickUp:ApiKey"];
+
         _isConfigured = !string.IsNullOrWhiteSpace(apiKey);
         _webhookSecret = config["ClickUp:WebhookSecret"];
         _workspaceId = config["ClickUp:WorkspaceId"];

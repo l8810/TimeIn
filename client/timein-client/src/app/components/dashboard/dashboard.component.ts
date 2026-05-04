@@ -1,13 +1,13 @@
 import { Component, OnInit, OnDestroy, computed, signal, ViewChild, ElementRef, AfterViewInit, ChangeDetectorRef } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { RouterModule, Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ReportService } from '../../services/report.service';
 import { AuthService } from '../../services/auth.service';
 import { Dashboard, ManagerDashboard, AdminDashboard, ProjectHours, TaskHoursItem } from '../../models/models';
-import { interval } from 'rxjs';
+import { interval, Subscription } from 'rxjs';
 import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -31,6 +31,9 @@ const CHART_COLORS = [
           <h1>שלום, {{ firstName }} 👋</h1>
           <p class="header-sub">{{ auth.hasRole('Admin') ? 'סקירה כללית של הארגון' : 'הנה סיכום פעילות העבודה שלך' }}</p>
         </div>
+        <button class="refresh-btn" (click)="refreshData()" matTooltip="רענן נתונים">
+          <mat-icon>refresh</mat-icon>
+        </button>
       </div>
 
       @if (timerStart()) {
@@ -100,7 +103,7 @@ const CHART_COLORS = [
                   @for (p of periodProjects(); track p.projectId) {
                     <div class="project-item">
                       <div class="project-dot" [style.background]="projectColor($index)"></div>
-                      <span class="project-item-name">{{ p.projectName }}</span>
+                      <span class="project-item-name" (click)="drillToProject(p.projectId)" style="cursor: pointer;">{{ p.projectName }}</span>
                       <span class="project-item-hours">{{ toHours(p.hours) }}</span>
                     </div>
                   }
@@ -122,7 +125,7 @@ const CHART_COLORS = [
                 <div class="task-hours-list">
                   @for (t of periodTasks(); track t.taskName) {
                     <div class="task-hours-row">
-                      <span class="task-hours-name">{{ t.taskName }}</span>
+                      <span class="task-hours-name" (click)="drillToTask(t.taskName)" style="cursor: pointer;">{{ t.taskName }}</span>
                       <div class="task-hours-bar-wrap">
                         <div class="task-hours-bar"
                           [style.width.%]="maxTaskHours() > 0 ? t.hours / maxTaskHours() * 100 : 0">
@@ -435,16 +438,19 @@ const CHART_COLORS = [
     </div>
   `,
   styles: [`
-    .dashboard { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
-    .page-header { margin-bottom: 24px; }
-    h1 { margin: 0 0 4px; font-size: 26px; font-weight: 700; color: #1e1b4b; }
-    .header-sub { margin: 0; color: #6b7280; font-size: 14px; }
+    .dashboard { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
+    .page-header { margin-bottom: 20px; display: flex; align-items: flex-start; justify-content: space-between; }
+    h1 { margin: 0 0 3px; font-size: 22px; font-weight: 700; color: #0f172a; letter-spacing: -0.4px; }
+    .header-sub { margin: 0; color: #64748b; font-size: 13px; }
+    .refresh-btn { background: none; border: none; color: #94a3b8; cursor: pointer; padding: 8px; border-radius: 6px; transition: all 0.2s; }
+    .refresh-btn:hover { background: #e2e8f0; color: #1d4ed8; }
 
     .timer-banner {
       display: flex; align-items: center; justify-content: space-between;
-      background: linear-gradient(135deg, #1e1b4b, #312e81);
-      color: white; border-radius: 14px; padding: 16px 24px;
-      margin-bottom: 24px; gap: 16px; flex-wrap: wrap; text-decoration: none;
+      background: linear-gradient(135deg, #0f172a, #1e3a5f);
+      color: white; border-radius: 8px; padding: 14px 22px;
+      margin-bottom: 20px; gap: 16px; flex-wrap: wrap; text-decoration: none;
+      border: 1px solid rgba(255,255,255,0.06);
     }
     .timer-banner-right { display: flex; align-items: center; gap: 10px; font-size: 14px; }
     .timer-banner-left { display: flex; align-items: center; gap: 12px; }
@@ -454,38 +460,39 @@ const CHART_COLORS = [
     .timer-count { font-size: 22px; font-weight: 300; font-variant-numeric: tabular-nums; letter-spacing: 2px; }
     .btn-link { color: rgba(255,255,255,0.7); font-size: 13px; }
 
-    .stats-row { display: flex; gap: 16px; margin-bottom: 24px; }
-    .stat-card { flex: 1; border-radius: 16px; padding: 20px; display: flex; align-items: center; gap: 16px; color: white; }
-    .stat-blue { background: linear-gradient(135deg, #4f46e5, #6366f1); }
-    .stat-purple { background: linear-gradient(135deg, #7c3aed, #a78bfa); }
-    .stat-teal { background: linear-gradient(135deg, #0891b2, #22d3ee); }
-    .stat-icon mat-icon { font-size: 32px; width: 32px; height: 32px; opacity: 0.85; }
-    .stat-value { font-size: 30px; font-weight: 800; line-height: 1; }
-    .stat-label { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+    .stats-row { display: flex; gap: 14px; margin-bottom: 20px; }
+    .stat-card { flex: 1; border-radius: 10px; padding: 18px 20px; display: flex; align-items: center; gap: 16px; color: white; }
+    .stat-blue   { background: linear-gradient(135deg, #1e40af, #2563eb); }
+    .stat-purple { background: linear-gradient(135deg, #0f766e, #0d9488); }
+    .stat-teal   { background: linear-gradient(135deg, #0369a1, #0284c7); }
+    .stat-icon mat-icon { font-size: 28px; width: 28px; height: 28px; opacity: 0.8; }
+    .stat-value { font-size: 28px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+    .stat-label { font-size: 12px; opacity: 0.82; margin-top: 4px; letter-spacing: 0.2px; }
 
     /* Period breakdown card */
     .breakdown-card {
-      background: white; border-radius: 16px;
-      box-shadow: 0 2px 12px rgba(30,27,75,0.07);
-      margin-bottom: 24px; overflow: hidden;
+      background: white; border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+      border: 1px solid #e2e8f0;
+      margin-bottom: 20px; overflow: hidden;
     }
     .breakdown-header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 18px 24px; border-bottom: 1px solid #f3f4f6;
+      padding: 16px 22px; border-bottom: 1px solid #f1f5f9;
     }
     .breakdown-title {
       display: flex; align-items: center; gap: 8px;
-      font-size: 15px; font-weight: 700; color: #1e1b4b;
+      font-size: 14px; font-weight: 700; color: #0f172a;
     }
-    .breakdown-title mat-icon { color: #4f46e5; font-size: 20px; width: 20px; height: 20px; }
-    .period-tabs { display: flex; gap: 4px; background: #f3f4f6; border-radius: 10px; padding: 3px; }
+    .breakdown-title mat-icon { color: #2563eb; font-size: 19px; width: 19px; height: 19px; }
+    .period-tabs { display: flex; gap: 3px; background: #f1f5f9; border-radius: 7px; padding: 3px; }
     .period-tab {
-      height: 32px; padding: 0 16px; border: none; border-radius: 8px;
-      background: transparent; color: #6b7280; font-size: 13px; font-weight: 600;
+      height: 30px; padding: 0 14px; border: none; border-radius: 5px;
+      background: transparent; color: #64748b; font-size: 12px; font-weight: 600;
       font-family: 'Heebo', sans-serif; cursor: pointer; transition: all 0.15s;
     }
-    .period-tab.active { background: white; color: #4f46e5; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
-    .period-tab:not(.active):hover { color: #374151; }
+    .period-tab.active { background: white; color: #1d4ed8; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .period-tab:not(.active):hover { color: #334155; }
 
     .breakdown-body {
       display: grid; grid-template-columns: 1fr 1fr; gap: 0;
@@ -535,28 +542,31 @@ const CHART_COLORS = [
       display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px;
     }
     .kpi-card {
-      background: white; border-radius: 14px; padding: 16px 18px;
+      background: white; border-radius: 8px; padding: 14px 16px;
       display: flex; align-items: center; gap: 12px;
-      box-shadow: 0 2px 10px rgba(30,27,75,0.07);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      border: 1px solid #e2e8f0;
     }
-    .kpi-card mat-icon { color: #4f46e5; font-size: 26px; width: 26px; height: 26px; flex-shrink: 0; }
-    .kpi-value { font-size: 22px; font-weight: 800; color: #1e1b4b; line-height: 1.1; }
-    .kpi-label { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+    .kpi-card mat-icon { color: #2563eb; font-size: 24px; width: 24px; height: 24px; flex-shrink: 0; }
+    .kpi-value { font-size: 20px; font-weight: 700; color: #0f172a; line-height: 1.1; }
+    .kpi-label { font-size: 11px; color: #94a3b8; margin-top: 2px; letter-spacing: 0.2px; }
 
     .charts-row {
       display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;
     }
     .chart-card {
-      background: white; border-radius: 16px; padding: 20px;
-      box-shadow: 0 2px 12px rgba(30,27,75,0.07);
+      background: white; border-radius: 10px; padding: 18px 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      border: 1px solid #e2e8f0;
     }
     .chart-card-lg { grid-column: span 1; }
     .full-width-card { margin-bottom: 0; }
     .chart-card-header {
       display: flex; align-items: center; gap: 8px;
-      font-size: 14px; font-weight: 700; color: #1e1b4b; margin-bottom: 16px;
+      font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 14px;
+      text-transform: uppercase; letter-spacing: 0.4px;
     }
-    .chart-card-header mat-icon { color: #4f46e5; font-size: 20px; width: 20px; height: 20px; }
+    .chart-card-header mat-icon { color: #2563eb; font-size: 18px; width: 18px; height: 18px; }
     .chart-body { position: relative; height: 220px; display: flex; align-items: center; justify-content: center; }
     .chart-body canvas { max-height: 220px; }
     .chart-empty { text-align: center; color: #9ca3af; }
@@ -610,30 +620,32 @@ const CHART_COLORS = [
     .legend-item.todo span { background: #e5e7eb; border: 1px solid #d1d5db; }
 
     /* Quick actions */
-    .quick-actions { display: flex; gap: 16px; margin-bottom: 24px; }
+    .quick-actions { display: flex; gap: 12px; margin-bottom: 20px; }
     .action-card {
-      flex: 1; display: flex; align-items: center; gap: 14px;
-      background: white; border-radius: 14px; padding: 18px 20px;
+      flex: 1; display: flex; align-items: center; gap: 12px;
+      background: white; border-radius: 8px; padding: 14px 16px;
       text-decoration: none; color: inherit;
-      box-shadow: 0 2px 12px rgba(30,27,75,0.07); transition: all 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      border: 1px solid #e2e8f0;
+      transition: all 0.15s;
     }
-    .action-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(30,27,75,0.12); }
-    .action-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .action-icon mat-icon { color: white; font-size: 22px; width: 22px; height: 22px; }
-    .action-icon.purple { background: linear-gradient(135deg, #4f46e5, #7c3aed); }
-    .action-icon.blue { background: linear-gradient(135deg, #2563eb, #3b82f6); }
-    .action-icon.teal { background: linear-gradient(135deg, #0891b2, #22d3ee); }
+    .action-card:hover { border-color: #93c5fd; box-shadow: 0 3px 10px rgba(37,99,235,0.1); }
+    .action-icon { width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .action-icon mat-icon { color: white; font-size: 20px; width: 20px; height: 20px; }
+    .action-icon.purple { background: linear-gradient(135deg, #1e40af, #2563eb); }
+    .action-icon.blue   { background: linear-gradient(135deg, #0369a1, #0284c7); }
+    .action-icon.teal   { background: linear-gradient(135deg, #0f766e, #0d9488); }
     .action-text { flex: 1; }
-    .action-title { font-weight: 700; font-size: 14px; color: #1e1b4b; }
-    .action-sub { font-size: 12px; color: #6b7280; margin-top: 2px; }
-    .action-arrow { color: #d1d5db !important; font-size: 20px !important; width: 20px !important; height: 20px !important; }
+    .action-title { font-weight: 700; font-size: 13.5px; color: #0f172a; }
+    .action-sub { font-size: 11.5px; color: #64748b; margin-top: 2px; }
+    .action-arrow { color: #cbd5e1 !important; font-size: 18px !important; width: 18px !important; height: 18px !important; }
 
     /* Recent entries */
-    .card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(30,27,75,0.07); }
-    .card-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-    .card-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: #1e1b4b; }
-    .card-title mat-icon { color: #4f46e5; }
-    .link-btn { color: #4f46e5; font-size: 13px; font-weight: 600; text-decoration: none; }
+    .card { background: white; border-radius: 10px; padding: 20px 22px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); border: 1px solid #e2e8f0; }
+    .card-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .card-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 0.4px; }
+    .card-title mat-icon { color: #2563eb; font-size: 18px; width: 18px; height: 18px; }
+    .link-btn { color: #2563eb; font-size: 12.5px; font-weight: 600; text-decoration: none; }
     .entries-list { display: flex; flex-direction: column; }
     .entry-row { display: flex; align-items: flex-start; gap: 16px; padding: 14px 0; border-bottom: 1px solid #f3f4f6; }
     .entry-row:last-child { border-bottom: none; }
@@ -644,11 +656,11 @@ const CHART_COLORS = [
     .entry-desc { color: #9ca3af; font-size: 12px; margin-top: 2px; }
     .entry-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
     .entry-duration { font-weight: 700; font-size: 15px; color: #1e1b4b; }
-    .badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
-    .badge-draft { background: #ede9fe; color: #5b21b6; }
+    .badge { font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 4px; letter-spacing: 0.2px; }
+    .badge-draft     { background: #dbeafe; color: #1e40af; }
     .badge-submitted { background: #fef3c7; color: #92400e; }
-    .badge-approved { background: #d1fae5; color: #065f46; }
-    .badge-rejected { background: #fee2e2; color: #991b1b; }
+    .badge-approved  { background: #dcfce7; color: #166534; }
+    .badge-rejected  { background: #fee2e2; color: #991b1b; }
     .empty-state { text-align: center; padding: 48px; color: #9ca3af; }
     .empty-state mat-icon { font-size: 48px; width: 48px; height: 48px; opacity: 0.4; display: block; margin: 0 auto 12px; }
     .empty-state p { margin: 0; font-size: 14px; }
@@ -672,6 +684,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private charts: Chart[] = [];
   private periodChart: Chart | null = null;
+  private refreshSub?: Subscription;
 
   readonly CHART_COLORS = [
     '#4f46e5', '#7c3aed', '#0891b2', '#16a34a', '#dc2626',
@@ -721,10 +734,17 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(
     public auth: AuthService,
     private reportService: ReportService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private router: Router
   ) {}
 
   ngOnInit() {
+    this.loadData();
+    // Refresh data every 5 minutes
+    this.refreshSub = interval(5 * 60 * 1000).subscribe(() => this.refreshData());
+  }
+
+  private loadData() {
     this.reportService.getDashboard().subscribe(d => {
       this.dashboard.set(d);
       this.cdr.detectChanges();
@@ -748,17 +768,31 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  refreshData() {
+    this.loadData();
+  }
+
   ngAfterViewInit() {}
 
   ngOnDestroy() {
     this.charts.forEach(c => c.destroy());
     this.periodChart?.destroy();
+    this.refreshSub?.unsubscribe();
   }
 
   changePeriod(p: 'today' | 'week' | 'month') {
     this.activePeriod.set(p);
     this.cdr.detectChanges();
     setTimeout(() => this.buildPeriodChart(), 30);
+  }
+
+  drillToProject(projectId: number) {
+    this.router.navigate(['/reports'], { queryParams: { tab: 2, projectId } });
+  }
+
+  drillToTask(taskName: string) {
+    // Since TaskHoursItem doesn't have taskId, navigate to all entries
+    this.router.navigate(['/reports'], { queryParams: { tab: 0 } });
   }
 
   private buildPeriodChart() {
@@ -783,6 +817,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         responsive: true,
         maintainAspectRatio: false,
         cutout: '60%',
+        onClick: (event: any, elements: any) => {
+          if (elements.length > 0) {
+            const index = elements[0].index;
+            const project = projects[index];
+            this.router.navigate(['/reports'], { queryParams: { tab: 2, projectId: project.projectId } });
+          }
+        },
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -857,6 +898,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         },
         options: {
           responsive: true, maintainAspectRatio: false,
+          onClick: (event: any, elements: any) => {
+            if (elements.length > 0) {
+              const index = elements[0].index;
+              const member = members[index];
+              this.router.navigate(['/reports'], { queryParams: { tab: 1, userId: member.userId } });
+            }
+          },
           plugins: { legend: { display: false } },
           scales: {
             y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { font: { family: 'Heebo', size: 11 } } },
@@ -886,6 +934,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         options: {
           indexAxis: 'y',
           responsive: true, maintainAspectRatio: false,
+          onClick: (event: any, elements: any) => {
+            if (elements.length > 0 && ps.length) {
+              const index = elements[0].index;
+              const project = ps[index];
+              this.router.navigate(['/reports'], { queryParams: { tab: 2, projectId: project.projectId } });
+            }
+          },
           plugins: { legend: { display: false } },
           scales: {
             x: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { font: { family: 'Heebo', size: 11 } } },
@@ -1000,6 +1055,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         options: {
           indexAxis: 'y',
           responsive: true, maintainAspectRatio: false,
+          onClick: (event: any, elements: any) => {
+            if (elements.length > 0) {
+              const index = elements[0].index;
+              const emp = data.topEmployees[index];
+              this.router.navigate(['/reports'], { queryParams: { tab: 1, userId: emp.userId } });
+            }
+          },
           plugins: { legend: { display: false } },
           scales: {
             x: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { font: { family: 'Heebo', size: 11 } } },

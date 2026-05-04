@@ -97,78 +97,80 @@ import { AuthService } from '../../services/auth.service';
     .sidebar {
       width: 240px;
       min-width: 240px;
-      background: #1e1b4b;
+      background: #1e293b;
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      border-left: 1px solid rgba(0,0,0,0.15);
     }
 
     .sidebar-logo {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 24px 20px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding: 22px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
     }
     .logo-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #818cf8, #a78bfa);
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #1d4ed8, #3b82f6);
       display: flex;
       align-items: center;
       justify-content: center;
     }
-    .logo-icon mat-icon { color: white; font-size: 22px; width: 22px; height: 22px; }
+    .logo-icon mat-icon { color: white; font-size: 20px; width: 20px; height: 20px; }
     .logo-text {
-      font-size: 22px;
-      font-weight: 800;
+      font-size: 20px;
+      font-weight: 700;
       color: white;
-      letter-spacing: -0.5px;
+      letter-spacing: 0.5px;
     }
 
     /* Nav */
     .sidebar-nav {
       flex: 1;
-      padding: 16px 12px;
+      padding: 12px 10px;
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 2px;
       overflow-y: auto;
     }
     .nav-item {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 11px 14px;
-      border-radius: 10px;
-      color: rgba(255,255,255,0.65);
+      gap: 11px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      color: rgba(255,255,255,0.55);
       text-decoration: none;
-      font-size: 14px;
+      font-size: 13.5px;
       font-weight: 500;
       transition: all 0.15s;
     }
     .nav-item mat-icon {
-      font-size: 20px;
-      width: 20px;
-      height: 20px;
+      font-size: 19px;
+      width: 19px;
+      height: 19px;
       transition: color 0.15s;
     }
     .nav-item:hover {
-      background: rgba(255,255,255,0.08);
-      color: rgba(255,255,255,0.9);
+      background: rgba(255,255,255,0.07);
+      color: rgba(255,255,255,0.85);
     }
     .nav-item.active {
-      background: linear-gradient(135deg, rgba(129,140,248,0.25), rgba(167,139,250,0.2));
-      color: #a5b4fc;
+      background: rgba(59,130,246,0.18);
+      color: #93c5fd;
       font-weight: 600;
+      border-right: 3px solid #3b82f6;
     }
-    .nav-item.active mat-icon { color: #a5b4fc; }
+    .nav-item.active mat-icon { color: #93c5fd; }
 
     /* Footer */
     .sidebar-footer {
-      padding: 16px 12px;
-      border-top: 1px solid rgba(255,255,255,0.08);
+      padding: 14px 10px;
+      border-top: 1px solid rgba(255,255,255,0.06);
       display: flex;
       align-items: center;
       gap: 8px;
@@ -181,13 +183,13 @@ import { AuthService } from '../../services/auth.service';
       min-width: 0;
     }
     .user-avatar {
-      width: 36px;
-      height: 36px;
+      width: 34px;
+      height: 34px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #818cf8, #a78bfa);
+      background: linear-gradient(135deg, #1d4ed8, #3b82f6);
       color: white;
       font-weight: 700;
-      font-size: 14px;
+      font-size: 13px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -195,7 +197,7 @@ import { AuthService } from '../../services/auth.service';
     }
     .user-details { min-width: 0; }
     .user-name {
-      color: rgba(255,255,255,0.9);
+      color: rgba(255,255,255,0.88);
       font-size: 13px;
       font-weight: 600;
       white-space: nowrap;
@@ -203,17 +205,18 @@ import { AuthService } from '../../services/auth.service';
       text-overflow: ellipsis;
     }
     .user-role {
-      color: rgba(255,255,255,0.4);
+      color: rgba(255,255,255,0.38);
       font-size: 11px;
+      letter-spacing: 0.3px;
     }
-    .logout-btn { color: rgba(255,255,255,0.4) !important; }
-    .logout-btn:hover { color: rgba(255,255,255,0.8) !important; }
+    .logout-btn { color: rgba(255,255,255,0.35) !important; }
+    .logout-btn:hover { color: rgba(255,255,255,0.75) !important; }
 
     /* Main */
     .main-content {
       flex: 1;
       overflow-y: auto;
-      background: #f5f5f9;
+      background: #f0f4f8;
     }
   `]
 })

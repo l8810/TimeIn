@@ -193,6 +193,22 @@ const TIMER_STOPPED_KEY = 'timein_timer_stopped_ms';
               <span class="badge" [class]="'badge-' + e.status.toLowerCase()">{{ statusLabel(e.status) }}</span>
             </td>
           </ng-container>
+          <ng-container matColumnDef="links">
+            <th mat-header-cell *matHeaderCellDef></th>
+            <td mat-cell *matCellDef="let e" class="links-cell">
+              @if (e.relatedCommitIds) {
+                <span class="link-chip commit-chip" [matTooltip]="'Commit: ' + e.relatedCommitIds.slice(0,7)">
+                  <mat-icon>commit</mat-icon>
+                </span>
+              }
+              @if (e.relatedClickUpTaskId) {
+                <a [href]="e.clickUpUrl" target="_blank" class="link-chip clickup-chip"
+                  [matTooltip]="'ClickUp: ' + e.relatedClickUpTaskId">
+                  <mat-icon>link</mat-icon>
+                </a>
+              }
+            </td>
+          </ng-container>
           <ng-container matColumnDef="actions">
             <th mat-header-cell *matHeaderCellDef></th>
             <td mat-cell *matCellDef="let e">
@@ -382,6 +398,15 @@ const TIMER_STOPPED_KEY = 'timein_timer_stopped_ms';
     .badge-approved { background: #d1fae5; color: #065f46; }
     .badge-rejected { background: #fee2e2; color: #991b1b; }
 
+    .links-cell { white-space: nowrap; padding: 8px 4px !important; }
+    .link-chip {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px; border-radius: 6px; cursor: pointer;
+      text-decoration: none; margin-left: 4px;
+    }
+    .link-chip mat-icon { font-size: 15px; width: 15px; height: 15px; }
+    .commit-chip { background: #dcfce7; color: #16a34a; }
+    .clickup-chip { background: #ede9fe; color: #7c3aed; }
     .pending-label { font-size: 11px; color: #92400e; background: #fef3c7; padding: 3px 8px; border-radius: 20px; font-weight: 600; }
     .empty-state { text-align: center; padding: 64px; color: #9ca3af; }
     .empty-state mat-icon { font-size: 48px; width: 48px; height: 48px; display: block; margin: 0 auto 12px; opacity: 0.4; }
@@ -393,7 +418,7 @@ export class TimeEntriesComponent implements OnInit {
   projects = signal<Project[]>([]);
   mode: 'manual' | 'timer' = 'manual';
   filter: any = {};
-  displayedColumns = ['date', 'project', 'task', 'duration', 'description', 'status', 'actions'];
+  displayedColumns = ['date', 'project', 'task', 'duration', 'description', 'status', 'links', 'actions'];
 
   private tick = toSignal(interval(1000), { initialValue: 0 });
   timerStart = signal<Date | null>(null);

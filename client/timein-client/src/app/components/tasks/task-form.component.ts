@@ -75,7 +75,7 @@ import { Task, Project, Team } from '../../models/models';
       </mat-form-field>
       <mat-form-field appearance="outline" class="full-width">
         <mat-label>מזהה משימה ב-ClickUp (אופציונלי)</mat-label>
-        <input matInput [(ngModel)]="model.clickUpTaskId" placeholder="לדוגמה: 86exee1pv" />
+        <input matInput [(ngModel)]="model.clickUpTaskId"/>
         <mat-hint>מופיע ב-URL של ClickUp: app.clickup.com/t/<strong>86exee1pv</strong></mat-hint>
       </mat-form-field>
     </mat-dialog-content>

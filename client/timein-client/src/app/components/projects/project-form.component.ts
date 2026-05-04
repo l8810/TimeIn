@@ -12,6 +12,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatChipsModule } from '@angular/material/chips';
 import { ProjectService } from '../../services/project.service';
 import { TeamService } from '../../services/team.service';
+import { AuthService } from '../../services/auth.service';
 import { Project, ProjectMember, Team, User } from '../../models/models';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
@@ -39,7 +40,7 @@ import { environment } from '../../../environments/environment';
 
       <mat-form-field appearance="outline" class="full-width">
         <mat-label>צוות *</mat-label>
-        <mat-select [(ngModel)]="model.teamId" required>
+        <mat-select [(ngModel)]="model.teamId" [disabled]="isManager && !data.project" required (selectionChange)="onTeamChanged()">
           @for (t of teams; track t.teamId) {
             <mat-option [value]="t.teamId">{{ t.teamName }}</mat-option>
           }
@@ -48,6 +49,29 @@ import { environment } from '../../../environments/environment';
           <mat-hint style="color:#ef4444">יש לבחור צוות</mat-hint>
         }
       </mat-form-field>
+
+      @if (isAdmin) {
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>מנהל פרויקט *</mat-label>
+          <mat-select [(ngModel)]="model.managerId" required [disabled]="!model.teamId || managerOptions.length === 0">
+            @if (!model.teamId) {
+              <mat-option [disabled]="true" value="">בחר צוות קודם</mat-option>
+            }
+            @for (manager of managerOptions; track manager.userId) {
+              <mat-option [value]="manager.userId">{{ manager.fullName }} {{ manager.teamName ? '(' + manager.teamName + ')' : '' }}</mat-option>
+            }
+          </mat-select>
+          @if (!model.teamId) {
+            <mat-hint style="color:#ef4444">בחר צוות כדי לראות את מנהלי הצוות</mat-hint>
+          }
+          @if (model.teamId && managerOptions.length === 0) {
+            <mat-hint style="color:#ef4444">אין מנהלים בצוות זה</mat-hint>
+          }
+          @if (model.teamId && managerOptions.length > 0 && !model.managerId) {
+            <mat-hint style="color:#ef4444">יש לבחור מנהל פרויקט</mat-hint>
+          }
+        </mat-form-field>
+      }
 
       <mat-form-field appearance="outline" class="full-width">
         <mat-label>סטטוס</mat-label>
@@ -174,6 +198,11 @@ export class ProjectFormComponent implements OnInit {
   selectedUserId: number | null = null;
   addingMember = false;
 
+  currentUser: User | null = null;
+  isAdmin = false;
+  isManager = false;
+  managerOptions: User[] = [];
+
   get availableUsers(): User[] {
     const memberIds = new Set(this.members.map(m => m.userId));
     return this.allUsers.filter(u => !memberIds.has(u.userId));
@@ -184,15 +213,29 @@ export class ProjectFormComponent implements OnInit {
     @Inject(MAT_DIALOG_DATA) public data: { project?: Project },
     private projectService: ProjectService,
     private teamService: TeamService,
+    private auth: AuthService,
     private http: HttpClient,
     private snackBar: MatSnackBar
   ) {}
 
   ngOnInit() {
-    this.teamService.getAll().subscribe(t => this.teams = t);
+    this.currentUser = this.auth.currentUser();
+    this.isAdmin = this.currentUser?.role === 'Admin';
+    this.isManager = this.currentUser?.role === 'Manager';
+
+    this.teamService.getAll().subscribe(t => {
+      this.teams = t;
+      if (this.isManager && !this.data.project) {
+        this.model.teamId = this.currentUser?.teamId;
+        this.teams = this.teams.filter(team => team.teamId === this.currentUser?.teamId);
+      }
+    });
+
     if (this.data.project) {
       this.model = { ...this.data.project };
       this.loadMembers();
+      this.loadAllUsers();
+    } else if (this.isAdmin) {
       this.loadAllUsers();
     }
   }
@@ -202,7 +245,34 @@ export class ProjectFormComponent implements OnInit {
   }
 
   loadAllUsers() {
-    this.http.get<User[]>(`${environment.apiUrl}/users`).subscribe(u => this.allUsers = u);
+    this.http.get<User[]>(`${environment.apiUrl}/users`).subscribe(u => {
+      this.allUsers = u;
+      if (this.isAdmin) {
+        this.updateManagerOptions();
+      }
+    });
+  }
+
+  updateManagerOptions() {
+    if (!this.isAdmin) {
+      this.managerOptions = [];
+      return;
+    }
+
+    this.managerOptions = this.allUsers
+      .filter(user => user.role === 'Manager' && user.teamId === this.model.teamId);
+
+    if (this.model.teamId && this.managerOptions.length === 0) {
+      this.model.managerId = null;
+    }
+
+    if (this.model.managerId && !this.managerOptions.some(m => m.userId === this.model.managerId)) {
+      this.model.managerId = null;
+    }
+  }
+
+  onTeamChanged() {
+    this.updateManagerOptions();
   }
 
   addMember() {

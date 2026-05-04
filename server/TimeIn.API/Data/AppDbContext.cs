@@ -17,6 +17,7 @@ public class AppDbContext : DbContext
     public DbSet<GitCommit> GitCommits { get; set; }
     public DbSet<ActiveTimer> ActiveTimers { get; set; }
     public DbSet<ReportingRules> ReportingRules { get; set; }
+    public DbSet<SystemSetting> SystemSettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -109,6 +110,13 @@ public class AppDbContext : DbContext
             e.HasKey(r => r.RulesId);
             e.HasOne(r => r.UpdatedByUser).WithMany()
                 .HasForeignKey(r => r.UpdatedByUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<SystemSetting>(e =>
+        {
+            e.HasKey(s => s.Key);
+            e.Property(s => s.Key).HasMaxLength(100);
+            e.Property(s => s.Value).HasMaxLength(1000);
         });
 
         SeedData(modelBuilder);

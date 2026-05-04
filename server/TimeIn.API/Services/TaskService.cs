@@ -18,7 +18,6 @@ public class TaskService
             .Include(t => t.Project)
             .Include(t => t.AssignedUser)
             .Include(t => t.AssignedTeam)
-            .Include(t => t.TimeEntries)
             .AsQueryable();
 
         if (projectId.HasValue) query = query.Where(t => t.ProjectId == projectId);
@@ -35,6 +34,11 @@ public class TaskService
                 : query.Where(t => false);
         }
 
+        var approvedMinutesByTask = await _db.TimeEntries
+            .Where(te => te.Status == TimeEntryStatus.Approved && te.TaskId.HasValue)
+            .GroupBy(te => te.TaskId!.Value)
+            .ToDictionaryAsync(g => g.Key, g => g.Sum(te => te.DurationMinutes));
+
         return await query.Select(t => new TaskDto
         {
             TaskId = t.TaskId,
@@ -50,7 +54,7 @@ public class TaskService
             Priority = t.Priority.ToString(),
             ClickUpTaskId = t.ClickUpTaskId,
             EstimatedHours = t.EstimatedHours,
-            LoggedHours = Math.Round(t.TimeEntries.Sum(te => te.DurationMinutes) / 60.0, 2),
+            LoggedHours = Math.Round(approvedMinutesByTask.GetValueOrDefault(t.TaskId) / 60.0, 2),
             CreatedAt = t.CreatedAt
         }).ToListAsync();
     }
@@ -61,10 +65,13 @@ public class TaskService
             .Include(t => t.Project)
             .Include(t => t.AssignedUser)
             .Include(t => t.AssignedTeam)
-            .Include(t => t.TimeEntries)
             .FirstOrDefaultAsync(t => t.TaskId == id);
 
         if (t == null) return null;
+
+        var approvedMinutes = await _db.TimeEntries
+            .Where(te => te.TaskId == id && te.Status == TimeEntryStatus.Approved)
+            .SumAsync(te => (int?)te.DurationMinutes) ?? 0;
 
         return new TaskDto
         {
@@ -81,7 +88,7 @@ public class TaskService
             Priority = t.Priority.ToString(),
             ClickUpTaskId = t.ClickUpTaskId,
             EstimatedHours = t.EstimatedHours,
-            LoggedHours = Math.Round(t.TimeEntries.Sum(te => te.DurationMinutes) / 60.0, 2),
+            LoggedHours = Math.Round(approvedMinutes / 60.0, 2),
             CreatedAt = t.CreatedAt
         };
     }

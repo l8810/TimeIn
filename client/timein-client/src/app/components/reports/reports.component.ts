@@ -12,6 +12,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { ActivatedRoute } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { ReportService } from '../../services/report.service';
 import { ProjectService } from '../../services/project.service';
@@ -36,7 +37,7 @@ import { environment } from '../../../environments/environment';
       </div>
 
       <div class="table-card">
-        <mat-tab-group (selectedIndexChange)="onTabChange($event)">
+        <mat-tab-group [selectedIndex]="selectedTab" (selectedIndexChange)="onTabChange($event)">
 
           <!-- ── Tab 0: All entries ── -->
           <mat-tab>
@@ -216,7 +217,7 @@ import { environment } from '../../../environments/environment';
               @if (!entriesLoaded) {
                 <div class="empty-state">
                   <mat-icon>manage_search</mat-icon>
-                  <p>בחר פילטרים וטען נתונים</p>
+                  <p>טוען נתונים...</p>
                 </div>
               } @else if (!entryResult.entries.length) {
                 <div class="empty-state">
@@ -736,6 +737,8 @@ export class ReportsComponent implements OnInit {
   anomalies: any = null;
   reportsLoaded = false;
 
+  selectedTab = 0;
+
   entryCols = ['date', 'employee', 'project', 'task', 'duration', 'description', 'status', 'approval'];
   userCols    = ['name', 'hours', 'entries', 'projects'];
   projectCols = ['name', 'hours', 'workers', 'tasks'];
@@ -748,12 +751,37 @@ export class ReportsComponent implements OnInit {
     private timeEntryService: TimeEntryService,
     private http: HttpClient,
     private snackBar: MatSnackBar,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private route: ActivatedRoute
   ) {}
 
   ngOnInit() {
     this.projectService.getAll().subscribe(p => this.projects = p);
     this.http.get<any[]>(`${environment.apiUrl}/users`).subscribe(u => this.users = u);
+
+    // Handle query params for drill-down
+    this.route.queryParams.subscribe(params => {
+      if (params['tab']) {
+        this.selectedTab = +params['tab'];
+      }
+      if (params['userId']) {
+        this.filter.userId = +params['userId'];
+      }
+      if (params['projectId']) {
+        this.filter.projectId = +params['projectId'];
+        this.ef.projectId = +params['projectId'];
+      }
+      if (params['taskId']) {
+        this.ef.taskId = +params['taskId'];
+      }
+      // Load data if filters set
+      if (this.selectedTab === 0 && (this.ef.projectId || this.ef.userId)) {
+        this.loadEntries();
+      } else if (this.selectedTab > 0 && (this.filter.projectId || this.filter.userId)) {
+        this.loadReports();
+      }
+    });
+
     this.loadEntries();
   }
 
@@ -814,6 +842,7 @@ export class ReportsComponent implements OnInit {
   }
 
   loadEntries() {
+    this.entriesLoaded = false;
     const f: any = {};
     if (this.ef.userId)    f.userId    = this.ef.userId;
     if (this.ef.projectId) f.projectId = this.ef.projectId;
@@ -823,8 +852,8 @@ export class ReportsComponent implements OnInit {
     if (this.ef.toDate)    f.toDate    = this.ef.toDate;
 
     this.reportService.getEntriesReport(f).subscribe({
-      next: r => { this.entryResult = r; this.entriesLoaded = true; },
-      error: () => { this.entriesLoaded = true; this.snackBar.open('שגיאה בטעינת הדיווחים', 'סגור', { duration: 4000 }); }
+      next: r => { this.entryResult = r; this.entriesLoaded = true; this.cdr.detectChanges(); },
+      error: () => { this.entriesLoaded = true; this.snackBar.open('שגיאה בטעינת הדיווחים', 'סגור', { duration: 4000 }); this.cdr.detectChanges(); }
     });
   }
 

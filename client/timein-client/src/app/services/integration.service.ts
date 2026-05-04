@@ -33,6 +33,17 @@ export interface IntegrationStatus {
   clickUp: ClickUpStatus;
 }
 
+export interface ConnectionSettings {
+  clickUpApiKeyMasked: string;
+  clickUpApiKeyConfigured: boolean;
+  gitRemoteUrl: string;
+}
+
+export interface TestKeyResult {
+  isConnected: boolean;
+  workspaceName?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class IntegrationService {
   private base = `${environment.apiUrl}/integrations`;
@@ -57,5 +68,17 @@ export class IntegrationService {
 
   getGitInfo(): Observable<GitInfo> {
     return this.http.get<GitInfo>(`${this.base}/git`);
+  }
+
+  getConnectionSettings(): Observable<ConnectionSettings> {
+    return this.http.get<ConnectionSettings>(`${this.base}/connection-settings`);
+  }
+
+  updateConnectionSettings(req: { clickUpApiKey?: string; gitRemoteUrl?: string }): Observable<void> {
+    return this.http.put<void>(`${this.base}/connection-settings`, req);
+  }
+
+  testClickUpKey(apiKey: string): Observable<TestKeyResult> {
+    return this.http.post<TestKeyResult>(`${this.base}/test-clickup-key`, { apiKey });
   }
 }

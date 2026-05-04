@@ -26,10 +26,35 @@ public class TimeEntryService
             .Include(te => te.Task)
             .AsQueryable();
 
-        if (currentRole == "Employee")
+        var normalizedRole = currentRole?.Trim();
+
+        if (string.Equals(normalizedRole, "Employee", StringComparison.OrdinalIgnoreCase))
+        {
             query = query.Where(te => te.UserId == currentUserId);
+        }
+        else if (string.Equals(normalizedRole, "Manager", StringComparison.OrdinalIgnoreCase))
+        {
+            var teamId = await _db.Users
+                .Where(u => u.UserId == currentUserId)
+                .Select(u => u.TeamId)
+                .FirstOrDefaultAsync();
+
+            if (teamId != null)
+            {
+                query = query.Where(te => te.User.TeamId == teamId);
+            }
+            else
+            {
+                query = query.Where(te => false);
+            }
+
+            if (filter.UserId.HasValue)
+                query = query.Where(te => te.UserId == filter.UserId);
+        }
         else if (filter.UserId.HasValue)
+        {
             query = query.Where(te => te.UserId == filter.UserId);
+        }
 
         if (filter.ProjectId.HasValue) query = query.Where(te => te.ProjectId == filter.ProjectId);
         if (filter.TaskId.HasValue) query = query.Where(te => te.TaskId == filter.TaskId);

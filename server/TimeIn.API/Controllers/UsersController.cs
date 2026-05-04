@@ -47,11 +47,14 @@ public class UsersController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Manager,Admin")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateUserRequest req)
     {
-        var user = await _userService.UpdateAsync(id, req);
-        return user == null ? NotFound() : Ok(user);
+        var callerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var callerRole = User.FindFirstValue(ClaimTypes.Role)!;
+        var (user, error) = await _userService.UpdateAsync(id, req, callerId, callerRole);
+        if (user == null) return error == "forbidden" ? Forbid() : NotFound();
+        return Ok(user);
     }
 
     [HttpDelete("{id}")]

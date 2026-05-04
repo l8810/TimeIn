@@ -53,3 +53,27 @@ public class ClickUpTeamInfo
     [System.Text.Json.Serialization.JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 }
+
+public class ConnectionSettingsDto
+{
+    public string ClickUpApiKeyMasked { get; set; } = string.Empty;
+    public bool ClickUpApiKeyConfigured { get; set; }
+    public string GitRemoteUrl { get; set; } = string.Empty;
+}
+
+public class UpdateConnectionSettingsRequest
+{
+    public string? ClickUpApiKey { get; set; }
+    public string? GitRemoteUrl { get; set; }
+}
+
+public class TestClickUpKeyRequest
+{
+    public string ApiKey { get; set; } = string.Empty;
+}
+
+public class TestClickUpKeyResponse
+{
+    public bool IsConnected { get; set; }
+    public string? WorkspaceName { get; set; }
+}
